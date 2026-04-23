@@ -82,20 +82,7 @@
                 
                 app.stage.addChild(model);
                 
-                // Adjust for Mobile Screen
-                const scale = (window.innerWidth / model.width) * 0.8;
-                model.scale.set(scale);
-                model.anchor.set(0.5, 0.5);
-                model.x = window.innerWidth / 2;
-                model.y = window.innerHeight / 2;
-
-                log("Model: Loaded Successfully", false);
-                initTracking(model);
-
-            } catch (e) {
-                log("ERROR: " + e.message, true);
-                console.error(e);
-            }
+                
         });
 
         function initTracking(model) {
