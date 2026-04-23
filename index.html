@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Nanami Fix</title>
+    <title>Nanami VTuber</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <script src="https://cubism.live2d.com/sdk-web/bin/live2d.min.js"></script>
@@ -12,71 +12,86 @@
     <script src="https://cdn.jsdelivr.net/npm/kalidokit/dist/kalidokit.bundle.js"></script>
 
     <style>
-        body { margin: 0; background: #000; color: #0f0; font-family: monospace; overflow: hidden; }
-        canvas { width: 100vw; height: 100vh; }
-        #controls { position: fixed; top: 20px; left: 20px; z-index: 10; }
-        button { padding: 15px; background: #0f0; border: none; font-weight: bold; cursor: pointer; }
-        #debug { position: fixed; bottom: 0; width: 100%; height: 80px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 11px; pointer-events: none; }
+        body { margin: 0; background: #1a1a1a; color: #00ff00; font-family: monospace; overflow: hidden; }
+        canvas { width: 100vw; height: 100vh; display: block; }
+        #ui { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+        button { padding: 20px 40px; background: #00ff00; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; display: none; }
+        #status { background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <div id="controls"><button id="start">CLICK TO START</button></div>
+
     <canvas id="canvas"></canvas>
-    <div id="debug">System Ready.</div>
+    <div id="ui">
+        <div id="status">Loading Engine...</div>
+        <button id="start-btn">START VTUBER</button>
+    </div>
     <video id="video" style="display:none" playsinline></video>
 
     <script>
-        const log = (t) => { document.getElementById('debug').innerText = t; };
+        const status = document.getElementById('status');
+        const startBtn = document.getElementById('start-btn');
         const video = document.getElementById('video');
+
+        // 1. Wait for Libraries to be ready
+        const checkInterval = setInterval(() => {
+            if (window.PIXI && PIXI.live2d && PIXI.live2d.Live2DModel) {
+                status.style.display = 'none';
+                startBtn.style.display = 'block';
+                clearInterval(checkInterval);
+            } else {
+                console.log("Waiting for Live2D plugin...");
+            }
+        }, 500);
 
         const app = new PIXI.Application({
             view: document.getElementById("canvas"),
             autoStart: true, resizeTo: window, transparent: true
         });
 
-        document.getElementById('start').addEventListener('click', async () => {
-            document.getElementById('controls').style.display = 'none';
-            log("Verifying Libraries...");
-
-            // THE FIX: Check for PIXI.live2d or window.PIXI.live2d
-            const live2dReady = PIXI.live2d || (window.PIXI && window.PIXI.live2d);
-
-            if (!live2dReady) {
-                log("ERROR: Live2D Plugin not loaded yet. Try refreshing.");
-                return;
-            }
+        startBtn.addEventListener('click', async () => {
+            startBtn.style.display = 'none';
+            status.style.display = 'block';
+            status.innerText = "Accessing Camera & Model...";
 
             try {
-                log("Loading model.json...");
-                // Note: Ensure model.json is in your /Live2d/ folder root
+                // LOAD MODEL
                 const model = await PIXI.live2d.Live2DModel.from("model.json");
                 app.stage.addChild(model);
-                
+                model.anchor.set(0.5, 0.5);
                 model.x = window.innerWidth / 2;
                 model.y = window.innerHeight / 2;
-                model.anchor.set(0.5, 0.5);
-                model.scale.set(0.2); 
+                model.scale.set(0.2);
 
-                log("Asking for Camera...");
+                // CAMERA PERMISSION
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
+                
+                status.innerText = "Tracking Active!";
+                setTimeout(() => status.style.display = 'none', 2000);
 
-                startTracking(model);
+                initTracking(model);
             } catch (e) {
-                log("LOAD ERROR: " + e.message);
+                status.innerText = "ERROR: " + e.message;
+                status.style.color = "red";
                 console.error(e);
             }
         });
 
-        function startTracking(model) {
-            const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
+        function initTracking(model) {
+            const faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+
             faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
-            
-            faceMesh.onResults((res) => {
-                if (res.multiFaceLandmarks?.[0]) {
-                    const rig = Kalidokit.Face.solve(res.multiFaceLandmarks[0], { runtime: 'mediapipe', video: video });
-                    const core = model.internalModel.coreModel;
+
+            faceMesh.onResults((results) => {
+                if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
+                    const rig = Kalidokit.Face.solve(results.multiFaceLandmarks[0], {
+                        runtime: 'mediapipe', video: video
+                    });
                     
+                    const core = model.internalModel.coreModel;
                     core.setParamFloat('PARAM_ANGLE_X', rig.degrees.pitch);
                     core.setParamFloat('PARAM_ANGLE_Y', rig.degrees.yaw);
                     core.setParamFloat('PARAM_MOUTH_OPEN_Y', rig.mouth.y);
@@ -85,12 +100,11 @@
                 }
             });
 
-            const cam = new Camera(video, {
+            const camera = new Camera(video, {
                 onFrame: async () => { await faceMesh.send({image: video}); },
                 width: 640, height: 480
             });
-            cam.start();
-            log("TRACKING ACTIVE!");
+            camera.start();
         }
     </script>
 </body>
